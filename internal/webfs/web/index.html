@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Railway Signal Interlocking Engine</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>铁路信号联锁与进路控制引擎</h1>
+    <div class="status">
+      <span id="clock">clock 0s</span>
+      <button id="refresh">刷新</button>
+      <button id="reconcile">重算(模拟重启)</button>
+    </div>
+  </header>
+  <main>
+    <section class="panel">
+      <h2>站场布局</h2>
+      <div class="form">
+        <input id="node-code" placeholder="节点 code" />
+        <button id="add-node">+ 节点</button>
+      </div>
+      <div class="form">
+        <input id="sec-code" placeholder="区段 code" />
+        <input id="sec-len" placeholder="长度 m" />
+        <select id="sec-kind">
+          <option value="track">track 股道</option>
+          <option value="block">block 区间</option>
+          <option value="ladder">ladder 衔接段</option>
+        </select>
+        <input id="sec-from" placeholder="from 节点 id" />
+        <input id="sec-to" placeholder="to 节点 id" />
+        <button id="add-section">+ 区段</button>
+      </div>
+      <div class="form">
+        <input id="pt-code" placeholder="道岔 code" />
+        <input id="pt-node" placeholder="node id" />
+        <input id="pt-heel" placeholder="heel 区段" />
+        <input id="pt-normal" placeholder="normal 区段" />
+        <input id="pt-reverse" placeholder="reverse 区段" />
+        <input id="pt-max" placeholder="max_move s" value="5" />
+        <button id="add-point">+ 道岔</button>
+      </div>
+      <div class="form">
+        <input id="sig-code" placeholder="信号机 code" />
+        <input id="sig-entry" placeholder="entry 节点" />
+        <input id="sig-guard" placeholder="guard 区段" />
+        <button id="add-signal">+ 信号机</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>进路操作</h2>
+      <div class="form">
+        <input id="route-origin" placeholder="始端信号机 id" />
+        <input id="route-terminal" placeholder="终端区段 id" />
+        <button id="request-route">排列进路</button>
+      </div>
+      <div class="form">
+        <input id="occ-sec" placeholder="占用区段 id" />
+        <button id="occupancy">上报占用</button>
+        <input id="clr-sec" placeholder="出清区段 id" />
+        <button id="clearance">上报出清</button>
+        <input id="cancel-rt" placeholder="取消进路 id" />
+        <button id="cancel-route">取消</button>
+      </div>
+      <div class="form">
+        <input id="clk-delta" placeholder="推进秒数" value="10" />
+        <button id="advance-clock">推进时钟</button>
+      </div>
+      <div class="form">
+        <input id="bypass-pt" placeholder="旁路道岔 id" />
+        <button id="bypass-on">旁路开</button>
+        <button id="bypass-off">旁路关</button>
+      </div>
+    </section>
+
+    <section class="panel wide">
+      <h2>区段 / 道岔 / 信号机 / 进路</h2>
+      <div class="grid">
+        <div>
+          <h3>区段</h3>
+          <table id="sections"><thead><tr><th>code</th><th>占用</th><th>锁闭</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div>
+          <h3>道岔</h3>
+          <table id="points"><thead><tr><th>code</th><th>方向</th><th>状态</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div>
+          <h3>信号机</h3>
+          <table id="signals"><thead><tr><th>code</th><th>显示</th><th>进路</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div>
+          <h3>进路</h3>
+          <table id="routes"><thead><tr><th>code</th><th>状态</th><th>已解锁</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel wide">
+      <h2>事件审计</h2>
+      <table id="events"><thead><tr><th>seq</th><th>kind</th><th>clock</th><th>payload</th></tr></thead><tbody></tbody></table>
+    </section>
+  </main>
+  <pre id="out"></pre>
+  <script src="/static/app.js"></script>
+</body>
+</html>
