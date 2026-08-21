@@ -1,0 +1,80 @@
+:root {
+  --bg: #0f1419;
+  --panel: #1b232c;
+  --panel2: #243140;
+  --text: #e6edf3;
+  --muted: #8b98a5;
+  --accent: #58a6ff;
+  --busy: #f85149;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --rail: #d1d5db;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px;
+  background: var(--panel);
+  border-bottom: 1px solid #2d3a4a;
+}
+header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+.status { display: flex; gap: 10px; align-items: center; }
+#clock { color: var(--accent); font-variant-numeric: tabular-nums; }
+button {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid #324050;
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+main { padding: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.panel {
+  background: var(--panel);
+  border: 1px solid #2d3a4a;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.panel.wide { grid-column: 1 / -1; }
+.panel h2 { margin: 0 0 10px; font-size: 15px; color: var(--accent); }
+.form { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+input, select {
+  background: #0b1117;
+  color: var(--text);
+  border: 1px solid #324050;
+  border-radius: 6px;
+  padding: 4px 7px;
+  min-width: 70px;
+}
+input::placeholder { color: #5a6675; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.grid h3 { margin: 0 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid #2d3a4a; }
+th { color: var(--muted); font-weight: 500; }
+.busy { color: var(--busy); font-weight: 600; }
+.asp-red { color: var(--busy); font-weight: 700; }
+.asp-green { color: var(--ok); font-weight: 700; }
+.asp-yellow { color: var(--warn); font-weight: 700; }
+.aspdoubleyellow { color: var(--warn); font-weight: 700; }
+#out {
+  margin: 16px;
+  padding: 10px;
+  background: #0b1117;
+  border: 1px solid #2d3a4a;
+  border-radius: 8px;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  max-height: 220px;
+  overflow: auto;
+  color: #9aa7b4;
+  white-space: pre-wrap;
+}
