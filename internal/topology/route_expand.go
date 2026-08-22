@@ -169,7 +169,7 @@ func (g *Graph) Expand(originSignalID, terminalSectionID string) (*ExpandedRoute
 		PointsRequired:    pointsReq,
 		FlankProtection:   flank,
 		ApproachSectionID: approach,
-		Diverging:         false,
+		Diverging:         diverging,
 	}, nil
 }
 

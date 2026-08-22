@@ -258,7 +258,10 @@ func routeStillOpenable(g *topology.Graph, r *model.Route) bool {
 	return true
 }
 
-// aspectFor returns the proceed aspect for a route.
+// aspectFor returns the proceed aspect for a route, mirroring signal.AspectFor:
+// straight=GREEN, diverging over >1 points=DOUBLE_YELLOW, single-point
+// diverging=YELLOW. This must agree with the runtime clear path so a restarted
+// diverging route is not mistakenly relit as a straight GREEN.
 func aspectForRoute(r *model.Route) model.SignalAspect {
 	if !r.DivergingRoute() {
 		return model.AspectGreen
@@ -266,5 +269,5 @@ func aspectForRoute(r *model.Route) model.SignalAspect {
 	if len(r.PointsRequired) > 1 {
 		return model.AspectDoubleYellow
 	}
-	return model.AspectGreen
+	return model.AspectYellow
 }

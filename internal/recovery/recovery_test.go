@@ -190,3 +190,74 @@ func TestReconcileIdempotent(t *testing.T) {
 		}
 	}
 }
+
+// buildDivergingYard seeds a yard where the active route takes the reverse
+// (diverging) leg to trackB. pt1 is detected REVERSE, so the route is a
+// single-point diverging route whose signal must show YELLOW.
+func buildDivergingYard(t *testing.T) *store.Store {
+	t.Helper()
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	ctx := context.Background()
+	mustNode(t, st, "nAP", "nJ1", "nJ2", "nA", "nB", "nT1", "nT2")
+	mustSection(t, st, "sAP", model.KindBlock, "nAP", "nJ1")
+	mustSection(t, st, "s1", model.KindLadder, "nJ1", "nJ2")
+	mustSection(t, st, "s2n", model.KindLadder, "nJ2", "nA")
+	mustSection(t, st, "s2r", model.KindLadder, "nJ2", "nB")
+	mustSection(t, st, "trackA", model.KindTrack, "nA", "nT1")
+	mustSection(t, st, "trackB", model.KindTrack, "nB", "nT2")
+	// point detected at REVERSE so the diverging route is openable.
+	mustPoint(t, st, "pt1", "nJ2", "s1", "s2n", "s2r", model.DirReverse)
+	mustSignal(t, st, "sigA", "nJ1", "s1")
+	// active locked diverging route sigA -> trackB over pt1 reverse.
+	r := &model.Route{
+		ID: "rtB", Code: "RT-B", OriginSignalID: "sigA", TerminalSectionID: "trackB",
+		TerminalKind: model.KindTrack, State: model.RouteLocked,
+		PathSections:     []string{"s1", "s2r", "trackB"},
+		PointsRequired:   []model.PointRequirement{{PointID: "pt1", Direction: model.DirReverse}},
+		ApproachSectionID: "sAP", OpenedAt: 50, ReleasedCount: 0,
+	}
+	if err := st.InsertRoute(ctx, r); err != nil {
+		t.Fatalf("insert route: %v", err)
+	}
+	// lock the route's sections + point to rtB.
+	for _, sid := range []string{"s1", "s2r", "trackB"} {
+		sec, _ := st.GetSection(ctx, sid)
+		sec.LockedByRoute = "rtB"
+		_ = st.UpdateSection(ctx, sec)
+	}
+	pt, _ := st.GetPoint(ctx, "pt1")
+	pt.LockedByRoute = "rtB"
+	_ = st.UpdatePoint(ctx, pt)
+	// persist a (wrong) GREEN aspect so the test proves reconcile corrects it
+	// to YELLOW rather than trusting the persisted value.
+	sig, _ := st.GetSignal(ctx, "sigA")
+	sig.Aspect = model.AspectGreen
+	sig.Status = model.SignalClearable
+	sig.RouteID = "rtB"
+	_ = st.UpdateSignal(ctx, sig)
+	return st
+}
+
+// TestReconcileDivergingSignalYellow guards the bug where a restarted diverging
+// route was relit as a straight GREEN. After reconcile the signal must show
+// YELLOW (single-point diverging), matching the runtime clear path.
+func TestReconcileDivergingSignalYellow(t *testing.T) {
+	st := buildDivergingYard(t)
+	ctx := context.Background()
+	snap, err := LoadAll(ctx, st)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	g, _ := ReconcileAll(snap)
+	sig, _ := g.Signal("sigA")
+	if sig.Aspect != model.AspectYellow {
+		t.Fatalf("reconcile diverging signal aspect = %s, want YELLOW (not GREEN)", sig.Aspect)
+	}
+	if sig.Status != model.SignalClearable {
+		t.Fatalf("reconcile diverging signal status = %s, want CLEARABLE", sig.Status)
+	}
+}

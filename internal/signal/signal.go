@@ -84,10 +84,11 @@ func (c *Controller) CanClear(g *topology.Graph, r *model.Route, routeID string)
 			}
 		}
 	}
-	if r.DivergingRoute() {
-		return model.AspectGreen, true
-	}
-	return model.AspectGreen, true
+	// Diverging routes must show a caution aspect (YELLOW for a single point,
+	// DOUBLE_YELLOW over two or more) — never the straight GREEN. Computing the
+	// proceed aspect from a single source of truth (AspectFor) keeps the
+	// post-detection clear and the restart reconcile in agreement.
+	return c.AspectFor(r), true
 }
 
 // AspectFor computes the proceed aspect for a route (straight=GREEN, diverging
