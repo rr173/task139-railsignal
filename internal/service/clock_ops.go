@@ -66,7 +66,11 @@ func (s *Service) AdvanceClock(ctx context.Context, delta int) (*ClockAdvanceRes
 		// the operator marked the point FAULT. For the engine's deterministic
 		// semantics we treat deadline-reached as DETECTED.
 		if to >= p.MoveDeadline {
-			s.ptCtrl.Detect(p, p.Direction)
+			// the detector reports the direction the point was driven to — its
+			// outstanding target — not the stale pre-move p.Direction, otherwise
+			// a completed reverse throw would be read as the old (normal) direction
+			// and the move (and its route) would never confirm.
+			s.ptCtrl.Detect(p, p.TargetDirection)
 			detectedPoints = append(detectedPoints, p)
 			res.PointEvents = append(res.PointEvents, ClockPointEvent{PointID: p.ID, Kind: "DETECTED", From: prev, To: p.Status})
 		}

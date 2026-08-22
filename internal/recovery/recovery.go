@@ -58,7 +58,10 @@ func LoadAll(ctx context.Context, st *store.Store) (*LoadSnapshot, error) {
 		return nil, fmt.Errorf("load points: %w", err)
 	}
 	for _, p := range points {
-		p.Direction = model.DirNormal
+		// a completed reverse throw must survive a restart: keep the persisted
+		// detected direction so a resumed route reopens against the right leg.
+		// (AddPoint only rejects empty/invalid directions, so a stored value is
+		// already one of N/R; we must NOT force it back to Normal here.)
 		if err := g.AddPoint(p); err != nil {
 			return nil, fmt.Errorf("rebuild point %s: %w", p.ID, err)
 		}

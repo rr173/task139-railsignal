@@ -237,3 +237,67 @@ func TestBypassRefusedWhenHealthy(t *testing.T) {
 		t.Fatal("bypassing a healthy point should be refused")
 	}
 }
+
+// TestReverseRouteSurvivesClockAdvanceAndRestart covers the safety invariant
+// "after a point completes a reverse throw and is detected, the reverse
+// direction must survive persistence and a restart/reconcile so the route can
+// reopen." It drives a reverse (diverging) route whose point must move, advances
+// the clock to confirm the move, then forces a reload/reconcile and asserts the
+// point is still reverse and the route re-locks.
+func TestReverseRouteSurvivesClockAdvanceAndRestart(t *testing.T) {
+	svc := newServiceWithYard(t)
+	ctx := context.Background()
+	layout := svc.Layout(ctx)
+	var sigA, trackB, pt1 string
+	for _, s := range layout.Signals {
+		if s.Code == "SIG-A" {
+			sigA = s.ID
+		}
+	}
+	for _, s := range layout.Sections {
+		if s.Code == "SEC-TRACKB" {
+			trackB = s.ID
+		}
+	}
+	for _, p := range layout.Points {
+		if p.Code == "PT1" {
+			pt1 = p.ID
+		}
+	}
+	// reverse route: PT1 starts Normal, so the route must drive it to Reverse.
+	res, err := svc.RequestRoute(ctx, RouteRequest{OriginSignalID: sigA, TerminalSectionID: trackB})
+	if err != nil {
+		t.Fatalf("request reverse route: %v", err)
+	}
+	if res.Route.State != model.RoutePointsMoving {
+		t.Fatalf("reverse route should be POINTS_MOVING (point not yet detected); got %s", res.Route.State)
+	}
+	p, _ := svc.GetPoint(ctx, pt1)
+	if p.Status != model.PointMoving || p.TargetDirection != model.DirReverse {
+		t.Fatalf("point should be MOVING to REVERSE; status=%s target=%s", p.Status, p.TargetDirection)
+	}
+	// advance the clock past the move deadline so the detector confirms Reverse.
+	if _, err := svc.AdvanceClock(ctx, p.MoveDeadline+1); err != nil {
+		t.Fatalf("advance clock: %v", err)
+	}
+	p, _ = svc.GetPoint(ctx, pt1)
+	if p.Status != model.PointInPosition || p.Direction != model.DirReverse {
+		t.Fatalf("after clock-advance detect: status=%s dir=%s, want IN_POSITION/REVERSE", p.Status, p.Direction)
+	}
+	rt, _ := svc.GetRoute(ctx, res.Route.ID)
+	if rt.State != model.RouteLocked {
+		t.Fatalf("route should be LOCKED after point detected; got %s", rt.State)
+	}
+	// restart path: reload from the authoritative store + reconcile.
+	if _, err := svc.Reconcile(ctx); err != nil {
+		t.Fatalf("reconcile (restart): %v", err)
+	}
+	p, _ = svc.GetPoint(ctx, pt1)
+	if p.Status != model.PointInPosition || p.Direction != model.DirReverse {
+		t.Fatalf("after restart: status=%s dir=%s, want IN_POSITION/REVERSE preserved", p.Status, p.Direction)
+	}
+	rt, _ = svc.GetRoute(ctx, res.Route.ID)
+	if rt.State != model.RouteLocked {
+		t.Fatalf("route should re-lock after restart when point still reverse; got %s", rt.State)
+	}
+}
