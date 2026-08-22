@@ -69,7 +69,7 @@ func (m *Machine) Detect(p *model.Point, dir model.PointDirection) bool {
 	if p.Status == model.PointMoving {
 		if dir == p.TargetDirection {
 			p.Status = model.PointInPosition
-			p.Direction = p.Direction
+			p.Direction = dir
 			p.TargetDirection = dir
 			p.MoveStartTime = 0
 			p.MoveDeadline = 0

@@ -99,7 +99,9 @@ func (g *Graph) Expand(originSignalID, terminalSectionID string) (*ExpandedRoute
 				} else {
 					return nil, model.Conflictf("route expansion: point %s has no leg reaching terminal %s", pt.ID, terminalSectionID)
 				}
-				pointsReq = append(pointsReq, model.PointRequirement{PointID: pt.ID, Direction: model.DirNormal})
+				// record the point with the direction of the leg actually taken,
+				// so a diverging route requires the reverse (not the normal) leg.
+				pointsReq = append(pointsReq, model.PointRequirement{PointID: pt.ID, Direction: legTaken})
 				_ = otherLeg
 			} else {
 				// arriving from a leg: continue via the heel.
