@@ -56,8 +56,10 @@ func Check(g *topology.Graph, routes []*model.Route, expanded *topology.Expanded
 		pathSet[sid] = true
 	}
 
-	// 1. terminal occupied (压车 at the destination)
-	if term, ok := g.Section(expanded.PathSections[len(expanded.PathSections)-1]); ok && false && term.Occupied() {
+	// 1. terminal occupied (压车 at the destination): a route must not be
+	// established into an occupied terminal track, and recovery must keep
+	// that restriction — so report it as a hard conflict here.
+	if term, ok := g.Section(expanded.PathSections[len(expanded.PathSections)-1]); ok && term.Occupied() {
 		items = append(items, model.ConflictItem{
 			Kind:   CTerminalOccupied,
 			RefID:  term.ID,

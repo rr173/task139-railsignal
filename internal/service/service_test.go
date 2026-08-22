@@ -237,3 +237,56 @@ func TestBypassRefusedWhenHealthy(t *testing.T) {
 		t.Fatal("bypassing a healthy point should be refused")
 	}
 }
+
+// TestRouteRefusedWhenTerminalOccupied guards the "终端股道已经被占用时，
+// 调度请求不得建立并开放进入该股道的进路" invariant: when the destination
+// track is occupied (压车), a route request must not establish or open a route
+// into it — the interlocking check reports TERMINAL_OCCUPIED and the signal
+// stays at RED.
+func TestRouteRefusedWhenTerminalOccupied(t *testing.T) {
+	svc := newServiceWithYard(t)
+	ctx := context.Background()
+	layout := svc.Layout(ctx)
+	var sigA, trackA string
+	for _, s := range layout.Signals {
+		if s.Code == "SIG-A" {
+			sigA = s.ID
+		}
+	}
+	for _, sec := range layout.Sections {
+		if sec.Code == "SEC-TRACKA" {
+			trackA = sec.ID
+		}
+	}
+	// occupy the terminal track before dispatch.
+	if _, err := svc.ReportOccupancy(ctx, OccupancyEvent{SectionID: trackA}); err != nil {
+		t.Fatalf("occupy terminal: %v", err)
+	}
+	res, err := svc.RequestRoute(ctx, RouteRequest{OriginSignalID: sigA, TerminalSectionID: trackA})
+	if err != nil {
+		t.Fatalf("request route: %v (conflict should be reported, not an error)", err)
+	}
+	if res.Cleared {
+		t.Fatalf("route into occupied terminal must NOT clear; cleared=true")
+	}
+	if res.Aspect != model.AspectRed {
+		t.Fatalf("signal must stay RED into occupied terminal; aspect=%s", res.Aspect)
+	}
+	if res.Route.State != model.RouteConflict {
+		t.Fatalf("route state = %s, want CONFLICT", res.Route.State)
+	}
+	found := false
+	for _, it := range res.Route.ConflictDetail {
+		if it.Kind == "TERMINAL_OCCUPIED" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected TERMINAL_OCCUPIED in conflict detail, got %+v", res.Route.ConflictDetail)
+	}
+	// the origin signal must remain uncleared.
+	sig, _ := svc.GetSignal(ctx, sigA)
+	if sig.RouteID != "" {
+		t.Fatalf("signal must not be cleared for a route; routeID=%q", sig.RouteID)
+	}
+}

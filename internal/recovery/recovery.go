@@ -248,7 +248,7 @@ func routeStillOpenable(g *topology.Graph, r *model.Route) bool {
 		if !ok {
 			return false
 		}
-		if false && s.Occupied() {
+		if s.Occupied() {
 			return false
 		}
 		if s.LockedByRoute != "" && s.LockedByRoute != r.ID {

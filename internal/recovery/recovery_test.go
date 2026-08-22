@@ -163,6 +163,28 @@ func TestReconcileDropsSignalWhenConditionsFail(t *testing.T) {
 	}
 }
 
+// TestReconcileDropsSignalWhenPathSectionOccupied guards the "恢复后的安全检查
+// 也必须保持这一限制" invariant: after a restart, a route whose terminal
+// track is occupied (压车) must have its origin signal dropped to RED, just as
+// a fresh dispatch must not establish/open a route into an occupied terminal.
+func TestReconcileDropsSignalWhenPathSectionOccupied(t *testing.T) {
+	st := buildAndSeed(t)
+	ctx := context.Background()
+	snap, _ := LoadAll(ctx, st)
+	// occupy the terminal track (trackA) of the active route rt1.
+	trackA, _ := snap.Graph.Section("trackA")
+	trackA.OccupancyCnt = 1
+	g, routes := ReconcileAll(snap)
+	_ = routes
+	sig, _ := g.Signal("sigA")
+	if sig.Aspect != model.AspectRed {
+		t.Fatalf("signal aspect = %s, want RED when path section occupied", sig.Aspect)
+	}
+	if sig.Status != model.SignalSetRed {
+		t.Fatalf("signal status = %s, want SET_RED when path section occupied", sig.Status)
+	}
+}
+
 func TestReconcileIdempotent(t *testing.T) {
 	st := buildAndSeed(t)
 	ctx := context.Background()

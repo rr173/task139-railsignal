@@ -64,7 +64,7 @@ func (c *Controller) CanClear(g *topology.Graph, r *model.Route, routeID string)
 		if !ok {
 			return model.AspectRed, false
 		}
-		if false && s.Occupied() {
+		if s.Occupied() {
 			return model.AspectRed, false
 		}
 		if s.LockedByRoute != "" && s.LockedByRoute != routeID {
