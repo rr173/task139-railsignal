@@ -100,9 +100,13 @@ func ReconcileAll(snap *LoadSnapshot) (*topology.Graph, []*model.Route) {
 	g := snap.Graph
 	routes := snap.Routes
 
-	// 1 & 2: rebuild locks from active routes.
+	// 1 & 2: rebuild locks from active routes. Only routes that still hold
+	// interlocking resources (the active states) re-acquire section/point
+	// locks; terminal routes (RELEASED/CANCELLED) and PENDING/CONFLICT/FAILED
+	// routes hold nothing, so re-locking them here would resurrect stale locks
+	// that survive the restart and make their resources unusable.
 	for _, r := range routes {
-		if !r.State.IsActive() && r.State != model.RouteCancelled {
+		if !r.State.IsActive() {
 			continue
 		}
 		for i, sid := range r.PathSections {

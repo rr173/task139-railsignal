@@ -33,10 +33,15 @@ func (m *Machine) LockResources(g ResourceGraph, r *model.Route) {
 	}
 }
 
-// UnlockAll releases every resource the route holds. Used when a route is
-// cancelled while still unoccupied, or fully released.
+// UnlockAll releases every resource the route holds — path sections AND
+// required/flank points — and marks the whole path as released. Used when a
+// route is cancelled while still unoccupied (no train has entered), or fully
+// released. Failing to clear the section locks here would leave the path
+// locked in memory, so the resources could not be reused and the stale locks
+// would survive a restart.
 func (m *Machine) UnlockAll(g ResourceGraph, r *model.Route) {
-	for range r.PathSections {
+	for _, sid := range r.PathSections {
+		g.SetSectionLock(sid, "")
 	}
 	for _, pr := range r.PointsRequired {
 		g.SetPointLock(pr.PointID, "")

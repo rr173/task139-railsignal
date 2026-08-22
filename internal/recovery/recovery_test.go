@@ -190,3 +190,95 @@ func TestReconcileIdempotent(t *testing.T) {
 		}
 	}
 }
+
+// TestReconcileCancelledRouteLeavesResourcesFree is the regression for the
+// "residual lock after cancel" bug: a route that was cancelled while no train
+// had entered must not leave its path sections or points locked after a
+// restart. ReconcileAll only ever ADDS locks for active routes; it never
+// clears stale locks. So if the store still holds LockedByRoute on the
+// cancelled route's resources (because the cancel did not persist the
+// releases), they survive the restart and the resources cannot be reused.
+func TestReconcileCancelledRouteLeavesResourcesFree(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	ctx := context.Background()
+	mustNode(t, st, "nAP", "nJ1", "nJ2", "nA", "nB", "nT1", "nT2")
+	mustSection(t, st, "sAP", model.KindBlock, "nAP", "nJ1")
+	mustSection(t, st, "s1", model.KindLadder, "nJ1", "nJ2")
+	mustSection(t, st, "s2n", model.KindLadder, "nJ2", "nA")
+	mustSection(t, st, "s2r", model.KindLadder, "nJ2", "nB")
+	mustSection(t, st, "trackA", model.KindTrack, "nA", "nT1")
+	mustSection(t, st, "trackB", model.KindTrack, "nB", "nT2")
+	mustPoint(t, st, "pt1", "nJ2", "s1", "s2n", "s2r", model.DirNormal)
+	mustSignal(t, st, "sigA", "nJ1", "s1")
+
+	// A route that was cancelled while unoccupied: all of its resources must
+	// have been released (persisted with empty locks) and ReleasedCount set to
+	// the full path length. This is the persisted state produced by Cancel.
+	r := &model.Route{
+		ID:                "rtC",
+		Code:              "RT-C",
+		OriginSignalID:    "sigA",
+		TerminalSectionID: "trackA",
+		TerminalKind:      model.KindTrack,
+		State:             model.RouteCancelled,
+		PathSections:      []string{"s1", "s2n", "trackA"},
+		PointsRequired:    []model.PointRequirement{{PointID: "pt1", Direction: model.DirNormal}},
+		ApproachSectionID: "sAP",
+		OpenedAt:          10,
+		ReleasedCount:     3, // fully released
+	}
+	if err := st.InsertRoute(ctx, r); err != nil {
+		t.Fatalf("insert route: %v", err)
+	}
+	// Simulate the persisted post-cancel state: no resource still references rtC.
+	for _, sid := range r.PathSections {
+		sec, _ := st.GetSection(ctx, sid)
+		sec.LockedByRoute = ""
+		if err := st.UpdateSection(ctx, sec); err != nil {
+			t.Fatalf("update section %s: %v", sid, err)
+		}
+	}
+	pt, _ := st.GetPoint(ctx, "pt1")
+	pt.LockedByRoute = ""
+	if err := st.UpdatePoint(ctx, pt); err != nil {
+		t.Fatalf("update point: %v", err)
+	}
+	sig, _ := st.GetSignal(ctx, "sigA")
+	sig.Aspect = model.AspectRed
+	sig.Status = model.SignalSetRed
+	sig.RouteID = ""
+	if err := st.UpdateSignal(ctx, sig); err != nil {
+		t.Fatalf("update signal: %v", err)
+	}
+
+	snap, err := LoadAll(ctx, st)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	g, routes := ReconcileAll(snap)
+	if len(routes) != 1 || routes[0].State != model.RouteCancelled {
+		t.Fatalf("reconcile should keep the cancelled route terminal; got %+v", routes)
+	}
+	// The cancelled route holds no resources: every path section and point must
+	// be free (unlocked) so they can be reused immediately after the restart.
+	for _, sid := range r.PathSections {
+		s, ok := g.Section(sid)
+		if !ok {
+			t.Fatalf("section %s missing from graph", sid)
+		}
+		if s.LockedByRoute != "" {
+			t.Fatalf("section %s still locked by %q after restart (cancelled route resources must be free)", sid, s.LockedByRoute)
+		}
+	}
+	p, ok := g.Point("pt1")
+	if !ok {
+		t.Fatalf("point pt1 missing from graph")
+	}
+	if p.LockedByRoute != "" {
+		t.Fatalf("point pt1 still locked by %q after restart (cancelled route resources must be free)", p.LockedByRoute)
+	}
+}

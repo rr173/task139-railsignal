@@ -79,9 +79,13 @@ func (s *Service) persistCancelRouteOnly(ctx context.Context, r *model.Route) er
 	})
 }
 
+// persistCancelReleases writes back the section/point locks that a route
+// cancellation freed, so a restart loads the released (unlocked) state rather
+// than a stale lock. The route's path sections and required/flank points are
+// all released when an unoccupied route is cancelled.
 func (s *Service) persistCancelReleases(ctx context.Context, r *model.Route) error {
 	return s.store.WithTx(ctx, func(tx *sql.Tx) error {
-		for _, sid := range []string{} {
+		for _, sid := range r.PathSections {
 			if sec, ok := s.graph.Section(sid); ok {
 				if err := s.store.UpdateSectionTx(ctx, tx, sec); err != nil {
 					return err
