@@ -70,6 +70,54 @@ func newServiceWithYard(t *testing.T) *Service {
 	return svc
 }
 
+// TestRequestRouteRefusedWhenPointProtectOccupied verifies that establishing a
+// route which must move a point is rejected when that point's anti-squeeze
+// protect section is occupied, even when that section is NOT on the route's
+// path (so only the anti-squeeze guard can catch it). The diverging route to
+// SEC-TRACKB requires PT1 to reverse; arming PT1 with SEC-S2N (the normal leg,
+// which is not on the reverse route's path) and occupying it must refuse the
+// route rather than bypass rear/anti-squeeze protection.
+func TestRequestRouteRefusedWhenPointProtectOccupied(t *testing.T) {
+	svc := newServiceWithYard(t)
+	ctx := context.Background()
+	layout := svc.Layout(ctx)
+	var sigA, trackB, s2n string
+	for _, s := range layout.Signals {
+		if s.Code == "SIG-A" {
+			sigA = s.ID
+		}
+	}
+	for _, sec := range layout.Sections {
+		switch sec.Code {
+		case "SEC-TRACKB":
+			trackB = sec.ID
+		case "SEC-S2N":
+			s2n = sec.ID
+		}
+	}
+	// Arm PT1 with SEC-S2N (the normal leg) as its anti-squeeze protect
+	// section. SEC-S2N is not on the reverse route's path, so the only thing
+	// that can refuse the route is the point's anti-squeeze guard.
+	for _, p := range svc.graph.Points() {
+		if p.Code == "PT1" {
+			p.ProtectSections = []string{s2n}
+		}
+	}
+	// Occupy the protect section (a train sits over the switch leg).
+	if _, err := svc.ReportOccupancy(ctx, OccupancyEvent{SectionID: s2n}); err != nil {
+		t.Fatalf("occupy protect section: %v", err)
+	}
+	// The diverging route needs PT1 to move to reverse; it must be refused by
+	// the anti-squeeze guard.
+	res, err := svc.RequestRoute(ctx, RouteRequest{OriginSignalID: sigA, TerminalSectionID: trackB})
+	if err == nil {
+		t.Fatalf("route requiring a point move under an occupied protect section must be rejected, got %+v", res)
+	}
+	if res != nil && res.Cleared {
+		t.Fatalf("route must not clear the signal under anti-squeeze occupation")
+	}
+}
+
 func TestRequestStraightRouteClearsImmediately(t *testing.T) {
 	svc := newServiceWithYard(t)
 	ctx := context.Background()

@@ -102,7 +102,7 @@ func (s *Service) RequestRoute(ctx context.Context, req RouteRequest) (*RouteRes
 	anyMoving := false
 	for _, pr := range r.PointsRequired {
 		p, _ := s.graph.Point(pr.PointID)
-		if ok, err := s.ptCtrl.CanMove(p, pr.Direction, func(string) bool { return false }); err != nil {
+		if ok, err := s.ptCtrl.CanMove(p, pr.Direction, s.sectionOccupiedFn()); err != nil {
 			// anti-squeeze or fault: fail the route, release resources.
 			s.rtCtrl.Fail(rg, r)
 			_ = s.persistRouteTx(ctx, r)

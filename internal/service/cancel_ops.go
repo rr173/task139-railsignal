@@ -138,7 +138,7 @@ func (s *Service) OperatePoint(ctx context.Context, pointID string, dir model.Po
 	if p.LockedByRoute != "" {
 		return nil, model.Conflictf("point %s locked by route %s", p.ID, p.LockedByRoute)
 	}
-	if ok, err := s.ptCtrl.CanMove(p, dir, func(string) bool { return false }); err != nil {
+	if ok, err := s.ptCtrl.CanMove(p, dir, s.sectionOccupiedFn()); err != nil {
 		return nil, err
 	} else if !ok {
 		return p, nil // already at target

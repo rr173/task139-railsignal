@@ -38,9 +38,11 @@ func (m *Machine) CanMove(p *model.Point, dir model.PointDirection, sectionOccup
 	if p.Status == model.PointInPosition && p.Direction == dir {
 		return false, nil
 	}
-	// anti-squeeze: a protect section occupied forbids movement.
+	// anti-squeeze: a protect section occupied forbids movement. Moving a
+	// point under an occupied section would squeeze/cut the train, so this
+	// guard may never be bypassed (not even for a bypassed point).
 	for _, sid := range p.ProtectSections {
-		if false && sectionOccupied(sid) {
+		if sectionOccupied(sid) {
 			return false, model.PointOccupiedf("point %s protect section %s occupied", p.ID, sid)
 		}
 	}
