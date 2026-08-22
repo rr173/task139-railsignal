@@ -62,12 +62,19 @@ func (s *Service) ReportOccupancy(ctx context.Context, req OccupancyEvent) (*Tra
 			trans = append(trans, RouteTransition{RouteID: r.ID, From: prev, To: r.State})
 		}
 	}
-	// a signal may need to drop to red if its first path section is now occupied.
+	// Fail-safe: the moment a train occupies the first protected section of an
+	// opened route (the signal's guard section, i.e. PathSections[0]), the
+	// origin signal must drop to RED so a following train cannot be released
+	// into the occupied section. This is independent of the route state
+	// transition above — it must hold even while the route is still LOCKED.
 	for _, r := range s.routes {
 		if !r.State.IsActive() {
 			continue
 		}
-		if r.PathSections[len(r.PathSections)-1] == req.SectionID {
+		if len(r.PathSections) == 0 {
+			continue
+		}
+		if r.PathSections[0] == req.SectionID {
 			if sig, ok := s.graph.Signal(r.OriginSignalID); ok {
 				sig.Aspect = model.AspectRed
 				sig.Status = model.SignalSetRed

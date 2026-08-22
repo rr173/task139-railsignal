@@ -58,8 +58,11 @@ func (c *Controller) CanClear(g *topology.Graph, r *model.Route, routeID string)
 			return model.AspectRed, false
 		}
 	}
-	// 3. every route section free (not occupied) and not locked by another route.
-	for _, sid := range r.PathSections[1:] {
+	// 3. every route section free (not occupied) and not locked by another
+	// route. This includes PathSections[0] — the first protected section, i.e.
+	// the signal's own guard section. An occupied first section means a train
+	// has entered the route; the signal must be RED and may not (re)open.
+	for _, sid := range r.PathSections {
 		s, ok := g.Section(sid)
 		if !ok {
 			return model.AspectRed, false

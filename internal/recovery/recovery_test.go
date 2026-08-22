@@ -163,6 +163,30 @@ func TestReconcileDropsSignalWhenConditionsFail(t *testing.T) {
 	}
 }
 
+// TestReconcileKeepsSignalRedWhenFirstProtectedSectionOccupied verifies the
+// restart-recovery rule: when the first protected section of an opened route
+// (PathSections[0], the signal's guard section) is occupied — i.e. a train has
+// entered the route — the signal must stay RED after reconcile and must NOT be
+// re-opened, even though every point is in position.
+func TestReconcileKeepsSignalRedWhenFirstProtectedSectionOccupied(t *testing.T) {
+	st := buildAndSeed(t)
+	ctx := context.Background()
+	snap, _ := LoadAll(ctx, st)
+	// simulate the train having entered the route: occupy s1, the first
+	// protected section (sigA's guard section, PathSections[0]).
+	s1, _ := snap.Graph.Section("s1")
+	s1.OccupancyCnt = 1
+	g, routes := ReconcileAll(snap)
+	_ = routes
+	sig, _ := g.Signal("sigA")
+	if sig.Aspect != model.AspectRed {
+		t.Fatalf("signal aspect = %s, want RED when first protected section occupied", sig.Aspect)
+	}
+	if sig.Status == model.SignalClearable {
+		t.Fatalf("signal status = CLEARABLE, want RED (must not re-open across reconcile)")
+	}
+}
+
 func TestReconcileIdempotent(t *testing.T) {
 	st := buildAndSeed(t)
 	ctx := context.Background()

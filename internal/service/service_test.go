@@ -237,3 +237,91 @@ func TestBypassRefusedWhenHealthy(t *testing.T) {
 		t.Fatal("bypassing a healthy point should be refused")
 	}
 }
+
+// findIDsByCode resolves signal/section ids by code from the live layout.
+func findIDsByCode(t *testing.T, svc *Service) (sigA, trackA, s1, s2n, approach string) {
+	t.Helper()
+	ctx := context.Background()
+	layout := svc.Layout(ctx)
+	for _, s := range layout.Signals {
+		if s.Code == "SIG-A" {
+			sigA = s.ID
+		}
+	}
+	for _, sec := range layout.Sections {
+		switch sec.Code {
+		case "SEC-TRACKA":
+			trackA = sec.ID
+		case "SEC-S1":
+			s1 = sec.ID
+		case "SEC-S2N":
+			s2n = sec.ID
+		case "SEC-AP":
+			approach = sec.ID
+		}
+	}
+	if sigA == "" || trackA == "" || s1 == "" || s2n == "" || approach == "" {
+		t.Fatalf("yard incomplete: sigA=%s trackA=%s s1=%s s2n=%s approach=%s", sigA, trackA, s1, s2n, approach)
+	}
+	return
+}
+
+// TestFirstProtectedSectionOccupancyDropsSignalToRed verifies the fail-safe
+// rule: once the train occupies the first protected section of an opened
+// route (the signal's guard section, PathSections[0]), the origin signal must
+// immediately return to RED.
+func TestFirstProtectedSectionOccupancyDropsSignalToRed(t *testing.T) {
+	svc := newServiceWithYard(t)
+	ctx := context.Background()
+	sigA, trackA, s1, _, _ := findIDsByCode(t, svc)
+
+	if _, err := svc.RequestRoute(ctx, RouteRequest{OriginSignalID: sigA, TerminalSectionID: trackA}); err != nil {
+		t.Fatalf("route: %v", err)
+	}
+	if got, _ := svc.GetSignal(ctx, sigA); got.Aspect != model.AspectGreen {
+		t.Fatalf("opened signal aspect = %s, want GREEN", got.Aspect)
+	}
+	// occupy the first protected section (PathSections[0], the guard section).
+	if _, err := svc.ReportOccupancy(ctx, OccupancyEvent{SectionID: s1}); err != nil {
+		t.Fatalf("occupy first section: %v", err)
+	}
+	got, _ := svc.GetSignal(ctx, sigA)
+	if got.Aspect != model.AspectRed {
+		t.Fatalf("after occupying first protected section, signal aspect = %s, want RED", got.Aspect)
+	}
+	if got.Status != model.SignalSetRed {
+		t.Fatalf("signal status = %s, want SET_RED", got.Status)
+	}
+}
+
+// TestFirstProtectedSectionOccupancyStaysRedAcrossReconcile verifies the
+// restart-recovery half of the rule: after the first protected section is
+// occupied (signal dropped to RED), a reconcile (simulated restart) must NOT
+// re-open the signal — routeStillOpenable must treat the occupied first
+// section as a blocker.
+func TestFirstProtectedSectionOccupancyStaysRedAcrossReconcile(t *testing.T) {
+	svc := newServiceWithYard(t)
+	ctx := context.Background()
+	sigA, trackA, s1, _, _ := findIDsByCode(t, svc)
+
+	if _, err := svc.RequestRoute(ctx, RouteRequest{OriginSignalID: sigA, TerminalSectionID: trackA}); err != nil {
+		t.Fatalf("route: %v", err)
+	}
+	if _, err := svc.ReportOccupancy(ctx, OccupancyEvent{SectionID: s1}); err != nil {
+		t.Fatalf("occupy first section: %v", err)
+	}
+	if got, _ := svc.GetSignal(ctx, sigA); got.Aspect != model.AspectRed {
+		t.Fatalf("pre-reconcile signal aspect = %s, want RED", got.Aspect)
+	}
+	// simulate a restart: reload from the authoritative store and reconcile.
+	if _, err := svc.Reconcile(ctx); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	got, _ := svc.GetSignal(ctx, sigA)
+	if got.Aspect != model.AspectRed {
+		t.Fatalf("after reconcile, signal aspect = %s, want RED (must not re-open)", got.Aspect)
+	}
+	if got.Status == model.SignalClearable {
+		t.Fatalf("after reconcile, signal status = CLEARABLE, want RED (must not re-open)")
+	}
+}

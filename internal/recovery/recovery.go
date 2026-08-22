@@ -243,7 +243,12 @@ func routeStillOpenable(g *topology.Graph, r *model.Route) bool {
 			return false
 		}
 	}
-	for _, sid := range r.PathSections[1:] {
+	// every route section free, INCLUDING the first protected section
+	// (the signal's guard section, PathSections[0]). An occupied first
+	// section means a train has entered the route; the signal must stay RED
+	// and must NOT be re-opened after a restart recovery. Skipping index 0
+	// here would resurrect a proceed aspect over an occupied section.
+	for _, sid := range r.PathSections {
 		s, ok := g.Section(sid)
 		if !ok {
 			return false
