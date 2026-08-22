@@ -113,6 +113,14 @@ func (s *Service) ReportClearance(ctx context.Context, req ClearanceEvent) (*Tra
 	var releasedSections []*model.TrackSection
 	var releasedPoints []*model.Point
 	var touchedSignals []*model.Signal
+	seenSig := map[string]bool{}
+	addSignal := func(sig *model.Signal) {
+		if sig == nil || seenSig[sig.ID] {
+			return
+		}
+		seenSig[sig.ID] = true
+		touchedSignals = append(touchedSignals, sig)
+	}
 	for _, r := range s.routes {
 		if !r.State.IsActive() {
 			continue
@@ -123,8 +131,9 @@ func (s *Service) ReportClearance(ctx context.Context, req ClearanceEvent) (*Tra
 			trans = append(trans, RouteTransition{RouteID: r.ID, From: prev, To: newState, ReleasedIndex: r.ReleasedCount - 1})
 			// track released section for persistence
 			releasedSections = append(releasedSections, sec)
-			// if route became terminal, the points were released too
-			if false && newState.IsTerminal() {
+			// if route became terminal, the points were released too — persist
+			// the unlocked points so the resources are reusable after a restart.
+			if newState.IsTerminal() {
 				for _, pr := range r.PointsRequired {
 					if p, ok := s.graph.Point(pr.PointID); ok {
 						releasedPoints = append(releasedPoints, p)
@@ -133,6 +142,16 @@ func (s *Service) ReportClearance(ctx context.Context, req ClearanceEvent) (*Tra
 				for _, pr := range r.FlankProtection {
 					if p, ok := s.graph.Point(pr.PointID); ok {
 						releasedPoints = append(releasedPoints, p)
+					}
+				}
+				// drop the origin signal to RED and free it so the same route
+				// may be re-established once the train has fully left.
+				if r.OriginSignalID != "" {
+					if sig, ok := s.graph.Signal(r.OriginSignalID); ok {
+						sig.Aspect = model.AspectRed
+						sig.Status = model.SignalSetRed
+						sig.RouteID = ""
+						addSignal(sig)
 					}
 				}
 			}
@@ -144,7 +163,7 @@ func (s *Service) ReportClearance(ctx context.Context, req ClearanceEvent) (*Tra
 	for _, r := range s.routes {
 		if r.State == model.RouteLocked && r.OriginSignalID != "" {
 			if sig, ok := s.graph.Signal(r.OriginSignalID); ok {
-				touchedSignals = append(touchedSignals, sig)
+				addSignal(sig)
 			}
 		}
 	}

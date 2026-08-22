@@ -76,7 +76,11 @@ func (m *Machine) OnOccupancy(g ResourceGraph, r *model.Route, sectionID string,
 // OnClearance advances a route based on a section-clearance event. It releases
 // the cleared path section (rear-of-train protection: only sections the train
 // has actually left are released, and only in forward order). The last path
-// section is only released once the train has fully left the route.
+// section is only released once the train has fully left the route; releasing
+// it drops the route's points and transitions the route to a terminal state
+// (RELEASED, or CANCELLED if a cancel was pending), completing the route
+// release so the resources may be reused — including re-establishing the same
+// route.
 //
 // Returns the new state and whether a section was released this call.
 func (m *Machine) OnClearance(g ResourceGraph, r *model.Route, sectionID string, now int) (model.RouteState, bool) {
@@ -122,7 +126,11 @@ func (m *Machine) OnClearance(g ResourceGraph, r *model.Route, sectionID string,
 	// release idx
 	g.SetSectionLock(r.PathSections[idx], "")
 	r.ReleasedCount = idx + 1
-	if r.ReleasedCount > len(r.PathSections) {
+	// Once every path section has been released (the train has fully left the
+	// route, rear first), release all the route's points and transition to a
+	// terminal state. Equality, not strict greater-than: ReleasedCount reaches
+	// len(PathSections) exactly when the last (terminal) section is released.
+	if r.ReleasedCount >= len(r.PathSections) {
 		// release all points too
 		for _, pr := range r.PointsRequired {
 			g.SetPointLock(pr.PointID, "")

@@ -168,8 +168,9 @@ func reconcileRouteState(g *topology.Graph, r *model.Route) {
 			break
 		}
 	}
-	// all released?
-	if r.ReleasedCount > len(r.PathSections) {
+	// all released? ReleasedCount reaches len(path) exactly when the last
+	// (terminal) section has been released by the train.
+	if r.ReleasedCount >= len(r.PathSections) {
 		r.State = model.RouteReleased
 		return
 	}

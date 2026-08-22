@@ -237,3 +237,96 @@ func TestBypassRefusedWhenHealthy(t *testing.T) {
 		t.Fatal("bypassing a healthy point should be refused")
 	}
 }
+
+// TestFullClearanceReleasesRouteAndReestablishableAfterReconcile drives a train
+// through every section of a route in order, clears them in forward order, and
+// asserts the route completes release (terminal state, resources freed) once the
+// terminal section clears. It then simulates a restart and confirms the same
+// route can be re-established against the recovered yard state.
+func TestFullClearanceReleasesRouteAndReestablishableAfterReconcile(t *testing.T) {
+	svc := newServiceWithYard(t)
+	ctx := context.Background()
+	layout := svc.Layout(ctx)
+	var sigA, trackA, s1, s2n, approach, pt1 string
+	for _, s := range layout.Signals {
+		if s.Code == "SIG-A" {
+			sigA = s.ID
+		}
+	}
+	for _, p := range layout.Points {
+		if p.Code == "PT1" {
+			pt1 = p.ID
+		}
+	}
+	for _, sec := range layout.Sections {
+		switch sec.Code {
+		case "SEC-TRACKA":
+			trackA = sec.ID
+		case "SEC-S1":
+			s1 = sec.ID
+		case "SEC-S2N":
+			s2n = sec.ID
+		case "SEC-AP":
+			approach = sec.ID
+		}
+	}
+
+	res, err := svc.RequestRoute(ctx, RouteRequest{OriginSignalID: sigA, TerminalSectionID: trackA})
+	if err != nil {
+		t.Fatalf("request route: %v", err)
+	}
+	rtID := res.Route.ID
+
+	// train drives through the whole route, then clears every section in order.
+	_, _ = svc.ReportOccupancy(ctx, OccupancyEvent{SectionID: approach})
+	_, _ = svc.ReportOccupancy(ctx, OccupancyEvent{SectionID: s1})
+	_, _ = svc.ReportOccupancy(ctx, OccupancyEvent{SectionID: s2n})
+	_, _ = svc.ReportOccupancy(ctx, OccupancyEvent{SectionID: trackA})
+	_, _ = svc.ReportClearance(ctx, ClearanceEvent{SectionID: s1})
+	_, _ = svc.ReportClearance(ctx, ClearanceEvent{SectionID: s2n})
+	_, _ = svc.ReportClearance(ctx, ClearanceEvent{SectionID: approach})
+	_, _ = svc.ReportClearance(ctx, ClearanceEvent{SectionID: trackA})
+
+	rt, _ := svc.GetRoute(ctx, rtID)
+	if !rt.State.IsTerminal() {
+		t.Fatalf("after full clearance, route should be terminal, got %s", rt.State)
+	}
+	// the route's sections and point must be unlocked.
+	sec1, _ := svc.GetSection(ctx, s1)
+	if sec1.LockedByRoute != "" {
+		t.Fatalf("s1 should be unlocked after release, locked by %q", sec1.LockedByRoute)
+	}
+	secT, _ := svc.GetSection(ctx, trackA)
+	if secT.LockedByRoute != "" {
+		t.Fatalf("terminal section should be unlocked after release, locked by %q", secT.LockedByRoute)
+	}
+	pt, _ := svc.GetPoint(ctx, pt1)
+	if pt.LockedByRoute != "" {
+		t.Fatalf("point should be unlocked after release, locked by %q", pt.LockedByRoute)
+	}
+	// the origin signal must be free so the same route can be re-requested.
+	sig, _ := svc.GetSignal(ctx, sigA)
+	if sig.RouteID != "" {
+		t.Fatalf("origin signal should be freed, still cleared for %q", sig.RouteID)
+	}
+
+	// simulate a restart: reload from the authoritative store and reconcile.
+	if _, err := svc.Reconcile(ctx); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	// the point must remain unlocked after recovery (no stale lock).
+	pt, _ = svc.GetPoint(ctx, pt1)
+	if pt.LockedByRoute != "" {
+		t.Fatalf("point should be unlocked after reconcile, locked by %q", pt.LockedByRoute)
+	}
+
+	// re-establish the same route: it must clear again.
+	res2, err := svc.RequestRoute(ctx, RouteRequest{OriginSignalID: sigA, TerminalSectionID: trackA})
+	if err != nil {
+		t.Fatalf("re-request same route after reconcile failed: %v", err)
+	}
+	if !res2.Cleared || res2.Route.State != model.RouteLocked {
+		t.Fatalf("re-established route should clear to LOCKED, cleared=%v state=%s", res2.Cleared, res2.Route.State)
+	}
+}
+
