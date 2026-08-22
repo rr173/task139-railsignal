@@ -151,6 +151,21 @@ func ReconcileAll(snap *LoadSnapshot) (*topology.Graph, []*model.Route) {
 			}
 		}
 	}
+	// 5: release signal ownership for routes that are no longer active
+	// (cancelled, released, conflict, failed). After a restart the persisted
+	// signal row may still carry the id of a now-finished route; a signal that
+	// still "owns" a dead route can never establish a new one, so we drop it
+	// here. The signal stays at RED until a fresh route clears it.
+	for _, r := range routes {
+		if r.State.IsActive() {
+			continue
+		}
+		if sig, ok := g.Signal(r.OriginSignalID); ok && sig.RouteID == r.ID {
+			sig.Aspect = model.AspectRed
+			sig.Status = model.SignalSetRed
+			sig.RouteID = ""
+		}
+	}
 	return g, routes
 }
 

@@ -160,7 +160,6 @@ func (m *Machine) Cancel(g ResourceGraph, r *model.Route, now int) (model.RouteS
 	}
 	// no train: cancel immediately and release.
 	r.State = model.RouteCancelled
-	r.OriginSignalID = r.OriginSignalID
 	m.UnlockAll(g, r)
 	return r.State, nil
 }

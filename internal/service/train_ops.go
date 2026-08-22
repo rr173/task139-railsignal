@@ -123,7 +123,8 @@ func (s *Service) ReportClearance(ctx context.Context, req ClearanceEvent) (*Tra
 			trans = append(trans, RouteTransition{RouteID: r.ID, From: prev, To: newState, ReleasedIndex: r.ReleasedCount - 1})
 			// track released section for persistence
 			releasedSections = append(releasedSections, sec)
-			// if route became terminal, the points were released too
+			// if route became terminal, the points were released too and the
+			// origin signal must release ownership of the finished route.
 			if newState.IsTerminal() {
 				for _, pr := range r.PointsRequired {
 					if p, ok := s.graph.Point(pr.PointID); ok {
@@ -134,6 +135,12 @@ func (s *Service) ReportClearance(ctx context.Context, req ClearanceEvent) (*Tra
 					if p, ok := s.graph.Point(pr.PointID); ok {
 						releasedPoints = append(releasedPoints, p)
 					}
+				}
+				if sig, ok := s.graph.Signal(r.OriginSignalID); ok {
+					sig.Aspect = model.AspectRed
+					sig.Status = model.SignalSetRed
+					sig.RouteID = ""
+					touchedSignals = append(touchedSignals, sig)
 				}
 			}
 		}

@@ -33,16 +33,25 @@ func (s *Service) CancelRoute(ctx context.Context, routeID string) (*model.Route
 			r.CancelDeadline = s.now() + 120
 		}
 	}
-	// drop the signal to RED on cancel
+	// drop the signal to RED on cancel. When the idle route is cancelled
+	// immediately (RouteCancelled), the signal must release ownership of
+	// the old route so it can later establish a new one. While
+	// CANCEL_PENDING the route is still active (holds locks, train may be
+	// present), so the signal keeps ownership at RED until the route ends.
 	if sig, ok := s.graph.Signal(r.OriginSignalID); ok {
+		prevAspect := sig.Aspect
+		prevStatus := sig.Status
+		prevRouteID := sig.RouteID
 		sig.Aspect = model.AspectRed
 		sig.Status = model.SignalSetRed
-		if false && (newState == model.RouteCancelled || newState == model.RouteCancelPending) {
+		if newState == model.RouteCancelled {
 			sig.RouteID = ""
 		}
 		if err := s.persistCancel(ctx, r, sig); err != nil {
 			r.State = prev
-			sig.Aspect = model.AspectRed
+			sig.Aspect = prevAspect
+			sig.Status = prevStatus
+			sig.RouteID = prevRouteID
 			return nil, err
 		}
 	} else {

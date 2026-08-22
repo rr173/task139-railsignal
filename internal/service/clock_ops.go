@@ -122,6 +122,15 @@ func (s *Service) AdvanceClock(ctx context.Context, delta int) (*ClockAdvanceRes
 		}
 		prev := r.State
 		if newState, changed := s.rtCtrl.TickCancelDeadline(rg, r, to); changed {
+			// the route is now terminal (CANCELLED): the origin signal must
+			// release ownership of the finished route so it can establish a
+			// new one.
+			if sig, ok := s.graph.Signal(r.OriginSignalID); ok {
+				sig.Aspect = model.AspectRed
+				sig.Status = model.SignalSetRed
+				sig.RouteID = ""
+				clearedSignals = append(clearedSignals, sig)
+			}
 			res.RouteEvents = append(res.RouteEvents, ClockRouteEvent{RouteID: r.ID, Kind: "CANCEL_RELEASED", From: prev, To: newState})
 			_ = prev
 		}

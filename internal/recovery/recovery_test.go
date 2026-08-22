@@ -163,6 +163,43 @@ func TestReconcileDropsSignalWhenConditionsFail(t *testing.T) {
 	}
 }
 
+// TestReconcileReleasesSignalForCancelledRoute verifies the restart-recovery
+// fix: when a persisted route is no longer active (CANCELLED here) but its
+// origin signal row still carries the dead route id, ReconcileAll must drop
+// that ownership so the signal can later establish a new route.
+func TestReconcileReleasesSignalForCancelledRoute(t *testing.T) {
+	st := buildAndSeed(t)
+	ctx := context.Background()
+	// flip the route to a terminal CANCELLED state but leave the signal
+	// pointing at it (the exact persisted drift that survives a restart).
+	rt, _ := st.GetRoute(ctx, "rt1")
+	rt.State = model.RouteCancelled
+	_ = st.UpdateRoute(ctx, rt)
+	g, routes := ReconcileAll(mustLoad(t, st))
+	if len(routes) != 1 {
+		t.Fatalf("routes = %d, want 1", len(routes))
+	}
+	if routes[0].State != model.RouteCancelled {
+		t.Fatalf("route state = %s, want CANCELLED", routes[0].State)
+	}
+	sig, _ := g.Signal("sigA")
+	if sig.RouteID != "" {
+		t.Fatalf("signal route_id = %q after reconcile, want \"\" (dead route released)", sig.RouteID)
+	}
+	if sig.Aspect != model.AspectRed {
+		t.Fatalf("signal aspect = %s, want RED", sig.Aspect)
+	}
+}
+
+func mustLoad(t *testing.T, st *store.Store) *LoadSnapshot {
+	t.Helper()
+	snap, err := LoadAll(context.Background(), st)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	return snap
+}
+
 func TestReconcileIdempotent(t *testing.T) {
 	st := buildAndSeed(t)
 	ctx := context.Background()

@@ -237,3 +237,99 @@ func TestBypassRefusedWhenHealthy(t *testing.T) {
 		t.Fatal("bypassing a healthy point should be refused")
 	}
 }
+
+// TestCancelIdleRouteReleasesSignalOwnership verifies the bug fix: after an
+// idle (unoccupied) route is cancelled, the origin signal must drop its
+// RouteID so the signal no longer "owns" the cancelled route and can be used
+// to establish a new route afterwards.
+func TestCancelIdleRouteReleasesSignalOwnership(t *testing.T) {
+	svc := newServiceWithYard(t)
+	ctx := context.Background()
+	layout := svc.Layout(ctx)
+	var sigA, trackA string
+	for _, s := range layout.Signals {
+		if s.Code == "SIG-A" {
+			sigA = s.ID
+		}
+	}
+	for _, s := range layout.Sections {
+		if s.Code == "SEC-TRACKA" {
+			trackA = s.ID
+		}
+	}
+	res, err := svc.RequestRoute(ctx, RouteRequest{OriginSignalID: sigA, TerminalSectionID: trackA})
+	if err != nil {
+		t.Fatalf("request route: %v", err)
+	}
+	// signal should now own the route.
+	sig, _ := svc.GetSignal(ctx, sigA)
+	if sig.RouteID != res.Route.ID {
+		t.Fatalf("signal route_id = %q, want %q (should own route)", sig.RouteID, res.Route.ID)
+	}
+	// cancel the idle route.
+	if _, err := svc.CancelRoute(ctx, res.Route.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	// signal must have released ownership of the cancelled route.
+	sig, _ = svc.GetSignal(ctx, sigA)
+	if sig.RouteID != "" {
+		t.Fatalf("signal route_id = %q after cancel, want \"\" (ownership released)", sig.RouteID)
+	}
+	if sig.Aspect != model.AspectRed {
+		t.Fatalf("signal aspect = %s after cancel, want RED", sig.Aspect)
+	}
+	// the same signal must be able to establish a new route.
+	res2, err := svc.RequestRoute(ctx, RouteRequest{OriginSignalID: sigA, TerminalSectionID: trackA})
+	if err != nil {
+		t.Fatalf("re-request route after cancel failed: %v", err)
+	}
+	if !res2.Cleared {
+		t.Fatalf("re-requested route should clear; got %+v", res2)
+	}
+}
+
+// TestCancelIdleRouteReleasesSignalOwnershipAfterReconcile verifies the bug
+// fix end-to-end across a restart: after an idle route is cancelled and the
+// engine reloaded/reconciled (simulated restart), the origin signal must no
+// longer own the cancelled route, and a new route must be establishable from
+// it.
+func TestCancelIdleRouteReleasesSignalOwnershipAfterReconcile(t *testing.T) {
+	svc := newServiceWithYard(t)
+	ctx := context.Background()
+	layout := svc.Layout(ctx)
+	var sigA, trackA string
+	for _, s := range layout.Signals {
+		if s.Code == "SIG-A" {
+			sigA = s.ID
+		}
+	}
+	for _, s := range layout.Sections {
+		if s.Code == "SEC-TRACKA" {
+			trackA = s.ID
+		}
+	}
+	res, err := svc.RequestRoute(ctx, RouteRequest{OriginSignalID: sigA, TerminalSectionID: trackA})
+	if err != nil {
+		t.Fatalf("request route: %v", err)
+	}
+	if _, err := svc.CancelRoute(ctx, res.Route.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	// simulate restart: reload from store + reconcile.
+	if _, err := svc.Reconcile(ctx); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	// after restart the signal must no longer own the (cancelled) route.
+	sig, _ := svc.GetSignal(ctx, sigA)
+	if sig.RouteID != "" {
+		t.Fatalf("signal route_id = %q after reconcile, want \"\" (ownership released on restart)", sig.RouteID)
+	}
+	// a new route must be establishable from the same signal.
+	res2, err := svc.RequestRoute(ctx, RouteRequest{OriginSignalID: sigA, TerminalSectionID: trackA})
+	if err != nil {
+		t.Fatalf("re-request route after restart failed: %v", err)
+	}
+	if !res2.Cleared {
+		t.Fatalf("re-requested route after restart should clear; got %+v", res2)
+	}
+}
