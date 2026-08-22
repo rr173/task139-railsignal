@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"task139-railsignal/internal/interlocking"
 	"task139-railsignal/internal/model"
 	"task139-railsignal/internal/store"
 )
@@ -188,5 +189,51 @@ func TestReconcileIdempotent(t *testing.T) {
 		if s.LockedByRoute != s2.LockedByRoute {
 			t.Fatalf("section %s lock differs: %q vs %q", s.ID, s.LockedByRoute, s2.LockedByRoute)
 		}
+	}
+}
+
+// TestReconciledLocksBlockConflictingRoute guards the safety property: after a
+// restart, an active but not-yet-released route must continue to lock its
+// sections and points so that a conflicting route cannot be established while
+// the process resumes. rt1 (sigA -> trackA, normal) is mid-release with s2n and
+// trackA still locked; a fresh route sigA -> trackB (reverse) overlaps it on
+// s1/the point and must be rejected by the interlocking check.
+func TestReconciledLocksBlockConflictingRoute(t *testing.T) {
+	st := buildAndSeed(t)
+	ctx := context.Background()
+	snap, _ := LoadAll(ctx, st)
+	// simulate locks lost in the crash so the test is robust to LoadAll overlay.
+	for _, sec := range snap.Graph.Sections() {
+		sec.LockedByRoute = ""
+	}
+	for _, p := range snap.Graph.Points() {
+		p.LockedByRoute = ""
+	}
+	g, routes := ReconcileAll(snap)
+
+	// the resumed active route's unreleased tail is re-locked.
+	s2n, _ := g.Section("s2n")
+	if s2n.LockedByRoute != routes[0].ID {
+		t.Fatalf("after reconcile s2n lock = %q, want %s", s2n.LockedByRoute, routes[0].ID)
+	}
+
+	// a conflicting route reusing s1 + pt1 (reverse leg to trackB) must be barred
+	// by the locks the resumed route holds.
+	expanded, err := g.Expand("sigA", "trackB")
+	if err != nil {
+		t.Fatalf("expand conflicting route: %v", err)
+	}
+	items := interlocking.Check(g, routes, expanded, "rt-conflict")
+	if len(items) == 0 {
+		t.Fatalf("conflicting route must be rejected across restart, got no conflicts")
+	}
+	gotSectionLock := false
+	for _, it := range items {
+		if it.Kind == interlocking.CSectionLocked || it.Kind == interlocking.CPointConflict {
+			gotSectionLock = true
+		}
+	}
+	if !gotSectionLock {
+		t.Fatalf("expected a lock-based conflict (section/point locked by resumed route), got %+v", items)
 	}
 }

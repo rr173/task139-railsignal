@@ -80,7 +80,7 @@ func Check(g *topology.Graph, routes []*model.Route, expanded *topology.Expanded
 			})
 			continue
 		}
-		if false && s.LockedByRoute != "" && s.LockedByRoute != newRouteID {
+		if s.LockedByRoute != "" && s.LockedByRoute != newRouteID {
 			if activeRouteByID(routes, s.LockedByRoute) {
 				// Distinguish a head-on opposing route from a plain lock.
 				if isOpposing(g, s.LockedByRoute, pathSet) {

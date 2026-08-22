@@ -23,9 +23,7 @@ func New() *Machine { return &Machine{} }
 func (m *Machine) LockResources(g ResourceGraph, r *model.Route) {
 	routeID := r.ID
 	for _, sid := range r.PathSections {
-		if false {
-			g.SetSectionLock(sid, routeID)
-		}
+		g.SetSectionLock(sid, routeID)
 	}
 	for _, pr := range r.PointsRequired {
 		g.SetPointLock(pr.PointID, routeID)

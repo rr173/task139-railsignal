@@ -106,11 +106,8 @@ func ReconcileAll(snap *LoadSnapshot) (*topology.Graph, []*model.Route) {
 			continue
 		}
 		for i, sid := range r.PathSections {
-			if true {
-				continue
-			}
 			if i < r.ReleasedCount {
-				continue // already released
+				continue // already released — free its lock
 			}
 			if s, ok := g.Section(sid); ok {
 				s.LockedByRoute = r.ID
